@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "pyMorpho"
+version = "0.0.0"
+authors = [
+  { name="Khaled Grira", email="kh.grira@gmail.com" },
+]
+description = "## A PLACEHOLDER FOR NOW: A python package for Morpho Blue, Adaptive Curve IRM and MetaMorpho"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/kakagri/pyMorpho"
+Issues = "https://github.com/kakagri/pyMorpho/issues"
