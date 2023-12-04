@@ -1,6 +1,6 @@
 from pymorpho.openzeppelin.erc20 import ERC20
 from pymorpho.utils.Mixer import Mixer, Metadata, Address, ChainID, InstanceType
-from pymorpho.openzeppelin.utils.math import Math as OZMath
+from pymorpho.openzeppelin.utils.math.math import Math as OZMath
 from abc import ABC, abstractmethod
 
 
@@ -23,7 +23,10 @@ class ERC4626(ERC20, ABC):
         ERC20.__init__(self, name_, symbol_, metadata, sender)
 
         self.metadata = metadata
+    
+    def deploy(self) -> Address:
         self.metadata.address = Mixer.register(self)
+        return self.metadata.address
 
     def decimals(self) -> int:
         return self._underlying_decimals + self._decimals_offset()

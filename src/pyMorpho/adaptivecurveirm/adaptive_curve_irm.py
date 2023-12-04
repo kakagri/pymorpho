@@ -34,7 +34,7 @@ class AdaptiveCurveIRM:
         self.rate_at_target: defaultdict[bytes, int] = defaultdict(int)
 
         assert morpho != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
-        assert curve_steepness >= WAD, ErrorsLib.INPUT_TOO_SMALL
+        assert curve_steepness >= WAD, f"{ErrorsLib.INPUT_TOO_SMALL}, curve steepness = {curve_steepness}, WAD = {WAD}"
         assert (
             curve_steepness <= ConstantsLib.MAX_CURVE_STEEPNESS
         ), ErrorsLib.INPUT_TOO_LARGE
@@ -53,12 +53,16 @@ class AdaptiveCurveIRM:
 
         self.MORPHO = morpho
         self.CURVE_STEEPNESS = curve_steepness
+        self.ADJUSTMENT_SPEED = adjustment_speed
         self.TARGET_UTILIZATION = target_utilization
         self.INITIAL_RATE_AT_TARGET = initial_rate_at_target
 
         # utility stuff for simualtion
         self.metadata = metadata
+    
+    def deploy(self) -> Address:
         self.metadata.address = Mixer.register(self)
+        return self.metadata.address
 
     def borrow_rate_view(
         self, market_params: MarketParams, market: Market, sender=Mixer.ZERO_ADDRESS

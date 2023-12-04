@@ -17,55 +17,59 @@ class MorphoBlue:
         metadata: Metadata = Metadata(
             ChainID.ETH_MAINNET, Mixer.ZERO_ADDRESS, "MorphoBlue", InstanceType.CONTRACT
         ),
+        sender = Mixer.ZERO_ADDRESS
     ):
         # owner
-        self.owner: Address = Mixer.ZERO_ADDRESS
+        self._owner: Address = Mixer.ZERO_ADDRESS
         # fee recipient
-        self.fee_recipient: Address = Mixer.ZERO_ADDRESS
+        self._fee_recipient: Address = Mixer.ZERO_ADDRESS
         # dictionary of position for each market (id, address) -> Position
-        self.position: defaultdict[Tuple[bytes, Address], Position] = defaultdict(
+        self._position: defaultdict[Tuple[bytes, Address], Position] = defaultdict(
             Position
         )
         # dictionary of the markets id -> Market
-        self.market: defaultdict[bytes, Market] = defaultdict(Market)
+        self._market: defaultdict[bytes, Market] = defaultdict(Market)
         # whether an irm is enabled
-        self.is_irm_enabled: defaultdict[Address, bool] = defaultdict(bool)
+        self._is_irm_enabled: defaultdict[Address, bool] = defaultdict(bool)
         # whether a lltv is enabled int -> bool
-        self.is_lltv_enabled: defaultdict[Address, bool] = defaultdict(bool)
+        self._is_lltv_enabled: defaultdict[Address, bool] = defaultdict(bool)
         # authorizations
-        self.is_authorized: defaultdict[Tuple[Address, Address], bool] = defaultdict(
+        self._is_authorized: defaultdict[Tuple[Address, Address], bool] = defaultdict(
             bool
         )
         # nonces
-        self.nonce: defaultdict[Address, int] = defaultdict(int)
+        self._nonce: defaultdict[Address, int] = defaultdict(int)
         # dictionary of the market parameters
-        self.id_to_market_params: defaultdict[bytes, MarketParams] = defaultdict(
+        self._id_to_market_params: defaultdict[bytes, MarketParams] = defaultdict(
             MarketParams
         )
 
-        self.owner = owner
+        self._owner = owner
 
         # Utility stuff
         self.metadata = metadata
-        self.metadata.address = Mixer.register_morpho(self)
-
+    
+    def deploy(self) -> Address:
+        self.metadata.address = Mixer.register(self)
+        return self.metadata.address
+    
     def _only_owner(self, sender):
-        assert sender == self.owner, ErrorsLib.NOT_OWNER
+        assert sender == self._owner, ErrorsLib.NOT_OWNER
 
     def set_owner(self, sender: Address = Mixer.ZERO_ADDRESS):
         self._only_owner(sender)
-        self.owner = sender
+        self._owner = sender
 
     def enable_irm(self, irm: str, sender=Mixer.ZERO_ADDRESS):
         self._only_owner(sender)
-        self.is_irm_enabled[irm] = True
+        self._is_irm_enabled[irm] = True
 
     def enable_lltv(self, lltv: int, sender=Mixer.ZERO_ADDRESS):
         self._only_owner(sender)
-        assert not (self.is_lltv_enabled[lltv]), ErrorsLib.ALREADY_SET
+        assert not (self._is_lltv_enabled[lltv]), ErrorsLib.ALREADY_SET
         assert lltv < WAD, ErrorsLib.MAX_LLTV_EXCEEDED
 
-        self.is_lltv_enabled[lltv] = True
+        self._is_lltv_enabled[lltv] = True
         # TODO: emit event ?
 
     def set_fee(
@@ -73,28 +77,28 @@ class MorphoBlue:
     ):
         self._only_owner(sender)
         id = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert new_fee <= ConstantsLib.MAX_FEE, ErrorsLib.MAX_FEE_EXCEEDED
         self._accrue_interest(market_params, id)
-        self.market[id].fee = new_fee
+        self._market[id].fee = new_fee
 
         # TODO: emit event ?
 
     def set_fee_recipient(self, new_fee_recipient: str, sender=Mixer.ZERO_ADDRESS):
         self._only_owner(sender)
-        # assert new_fee_recipient != self.fee_recipient, ErrorsLib.ALREADY_SET # unnecessary
-        self.fee_recipient = new_fee_recipient
+        # assert new_fee_recipient != self._fee_recipient, ErrorsLib.ALREADY_SET # unnecessary
+        self._fee_recipient = new_fee_recipient
         # TODO: emit event ?
 
     def create_market(self, market_params: MarketParams, sender=Mixer.ZERO_ADDRESS):
         id: bytes = market_params.id()
 
-        assert self.is_irm_enabled[market_params.irm], ErrorsLib.IRM_NOT_ENABLED
-        assert self.is_lltv_enabled[market_params.lltv], ErrorsLib.LLTV_NOT_ENABLED
-        assert self.market[id].last_update == 0, ErrorsLib.MARKET_ALREADY_CREATED
+        assert self._is_irm_enabled[market_params.irm], ErrorsLib.IRM_NOT_ENABLED
+        assert self._is_lltv_enabled[market_params.lltv], ErrorsLib.LLTV_NOT_ENABLED
+        assert self._market[id].last_update == 0, ErrorsLib.MARKET_ALREADY_CREATED
 
-        self.market[id].last_update = Mixer.block_timestamp(self.metadata.chain)
-        self.id_to_market_params[id] = market_params
+        self._market[id].last_update = Mixer.block_timestamp(self.metadata.chain)
+        self._id_to_market_params[id] = market_params
         # TODO: emit event ?
 
     def supply(
@@ -107,7 +111,7 @@ class MorphoBlue:
         sender=Mixer.ZERO_ADDRESS,
     ) -> Tuple[int, int]:
         id: bytes = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert UtilsLib.exactly_one_zero(assets, shares), ErrorsLib.INCONSISTENT_INPUT
         assert on_behalf != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
 
@@ -118,22 +122,22 @@ class MorphoBlue:
         if assets > 0:
             shares = SharesMathLib.to_shares_down(
                 assets,
-                self.market[id].total_supply_assets,
-                self.market[id].total_supply_shares,
+                self._market[id].total_supply_assets,
+                self._market[id].total_supply_shares,
             )
         else:
             assets = SharesMathLib.to_assets_up(
-                shares, self.market[id].total_supply_assets, self.total_supply_shares
+                shares, self._market[id].total_supply_assets, self.total_supply_shares
             )
 
-        self.position[(id, on_behalf)].supply_shares = (
-            self.position[(id, on_behalf)].supply_shares + shares
+        self._position[(id, on_behalf)].supply_shares = (
+            self._position[(id, on_behalf)].supply_shares + shares
         )
-        self.market[id].total_supply_shares = (
-            self.market[id].total_supply_shares + shares
+        self._market[id].total_supply_shares = (
+            self._market[id].total_supply_shares + shares
         )
-        self.market[id].total_supply_assets = (
-            self.market[id].total_supply_assets + assets
+        self._market[id].total_supply_assets = (
+            self._market[id].total_supply_assets + assets
         )
 
         # performing callback, sender needs to implement the on_morpho_supply function
@@ -157,7 +161,7 @@ class MorphoBlue:
         sender=Mixer.ZERO_ADDRESS,
     ) -> Tuple[int, int]:
         id: bytes = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert UtilsLib.exactly_one_zero(assets, shares), ErrorsLib.INCONSISTENT_INPUT
         assert receiver != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
         assert self._is_sender_authorized(on_behalf, sender), ErrorsLib.NOT_AUTHORIZED
@@ -166,27 +170,27 @@ class MorphoBlue:
         if assets > 0:
             shares = SharesMathLib.to_shares_up(
                 assets,
-                self.market[id].total_supply_assets,
-                self.market[id].total_supply_shares,
+                self._market[id].total_supply_assets,
+                self._market[id].total_supply_shares,
             )
         else:
             assets = SharesMathLib.to_assets_down(
-                shares, self.market[id].total_supply_assets, self.total_supply_shares
+                shares, self._market[id].total_supply_assets, self.total_supply_shares
             )
 
         # TODO: check that they don't go negative
-        self.position[(id, on_behalf)].supply_shares = (
-            self.position[(id, on_behalf)].supply_shares - shares
+        self._position[(id, on_behalf)].supply_shares = (
+            self._position[(id, on_behalf)].supply_shares - shares
         )
-        self.market[id].total_supply_shares = (
-            self.market[id].total_supply_shares - shares
+        self._market[id].total_supply_shares = (
+            self._market[id].total_supply_shares - shares
         )
-        self.market[id].total_supply_assets = (
-            self.market[id].total_supply_assets - assets
+        self._market[id].total_supply_assets = (
+            self._market[id].total_supply_assets - assets
         )
 
         assert (
-            self.market[id].total_borrow_assets <= self.market[id].total_supply_assets
+            self._market[id].total_borrow_assets <= self._market[id].total_supply_assets
         ), ErrorsLib.INSUFFICIENT_LIQUIDITY
 
         # TODO: emit event ?
@@ -207,7 +211,7 @@ class MorphoBlue:
         sender=Mixer.ZERO_ADDRESS,
     ) -> Tuple[int, int]:
         id: bytes = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert UtilsLib.exactly_one_zero(assets, shares), ErrorsLib.INCONSISTENT_INPUT
         assert receiver != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
         assert self._is_sender_authorized(on_behalf, sender), ErrorsLib.NOT_AUTHORIZED
@@ -217,29 +221,29 @@ class MorphoBlue:
         if assets > 0:
             shares = SharesMathLib.to_shares_up(
                 assets,
-                self.market[id].total_borrow_assets,
-                self.market[id].total_borrow_shares,
+                self._market[id].total_borrow_assets,
+                self._market[id].total_borrow_shares,
             )
         else:
             assets = SharesMathLib.to_assets_down(
-                shares, self.market[id].total_borrow_assets, self.total_borrow_shares
+                shares, self._market[id].total_borrow_assets, self.total_borrow_shares
             )
 
-        self.position[(id, on_behalf)].borrow_shares = (
-            self.position[(id, on_behalf)].borrow_shares + shares
+        self._position[(id, on_behalf)].borrow_shares = (
+            self._position[(id, on_behalf)].borrow_shares + shares
         )
-        self.market[id].total_borrow_assets = (
-            self.market[id].total_borrow_assets + assets
+        self._market[id].total_borrow_assets = (
+            self._market[id].total_borrow_assets + assets
         )
-        self.market[id].total_borrow_shares = (
-            self.market[id].total_borrow_shares + shares
+        self._market[id].total_borrow_shares = (
+            self._market[id].total_borrow_shares + shares
         )
 
         assert self._is_healthy(
             market_params, id, on_behalf
         ), ErrorsLib.INSUFFICIENT_COLLATERAL
         assert (
-            self.market[id].total_borrow_assets <= self.market[id].total_supply_assets
+            self._market[id].total_borrow_assets <= self._market[id].total_supply_assets
         ), ErrorsLib.INSUFFICIENT_LIQUIDITY
 
         # TODO: emit event ?
@@ -259,7 +263,7 @@ class MorphoBlue:
         sender=Mixer.ZERO_ADDRESS,
     ) -> Tuple[int, int]:
         id: bytes = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert UtilsLib.exactly_one_zero(assets, shares), ErrorsLib.INCONSISTENT_INPUT
         assert on_behalf != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
 
@@ -269,23 +273,23 @@ class MorphoBlue:
         if assets > 0:
             shares = SharesMathLib.to_shares_down(
                 assets,
-                self.market[id].total_borrow_assets,
-                self.market[id].total_borrow_shares,
+                self._market[id].total_borrow_assets,
+                self._market[id].total_borrow_shares,
             )
         else:
             assets = SharesMathLib.to_assets_up(
-                shares, self.market[id].total_borrow_assets, self.total_borrow_shares
+                shares, self._market[id].total_borrow_assets, self.total_borrow_shares
             )
 
         # TODO: check they don't go negative
-        self.position[(id, on_behalf)].borrow_shares = (
-            self.position[(id, on_behalf)].borrow_share - shares
+        self._position[(id, on_behalf)].borrow_shares = (
+            self._position[(id, on_behalf)].borrow_share - shares
         )
-        self.market[id].total_borrow_shares = (
-            self.market[id].total_borrow_shares - shares
+        self._market[id].total_borrow_shares = (
+            self._market[id].total_borrow_shares - shares
         )
-        self.market[id].total_borrow_assets = UtilsLib.zero_floor_sub(
-            self.market[id].total_borrow_assets, assets
+        self._market[id].total_borrow_assets = UtilsLib.zero_floor_sub(
+            self._market[id].total_borrow_assets, assets
         )
 
         if data is not None:
@@ -308,13 +312,13 @@ class MorphoBlue:
         sender=Mixer.ZERO_ADDRESS,
     ) -> Tuple[int, int]:
         id: bytes = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert assets > 0, ErrorsLib.ZERO_ASSETS
         assert on_behalf != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
         # TODO: add other asserts
 
-        self.position[(id, on_behalf)].collateral = (
-            self.position[(id, on_behalf)].collateral + assets
+        self._position[(id, on_behalf)].collateral = (
+            self._position[(id, on_behalf)].collateral + assets
         )
 
         # TODO: emit event ?
@@ -335,7 +339,7 @@ class MorphoBlue:
         sender=Mixer.ZERO_ADDRESS,
     ):
         id = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert assets > 0, ErrorsLib.ZERO_ASSETS
         assert receiver != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
         assert self._is_sender_authorized(on_behalf, sender), ErrorsLib.NOT_AUTHORIZED
@@ -345,8 +349,8 @@ class MorphoBlue:
         self._accrue_interest(market_params, id)
 
         # TODO: check they don't go negative
-        self.position[(id, on_behalf)].collateral = (
-            self.position[(id, on_behalf)].collateral - assets
+        self._position[(id, on_behalf)].collateral = (
+            self._position[(id, on_behalf)].collateral - assets
         )
 
         assert self._is_healthy(
@@ -369,7 +373,7 @@ class MorphoBlue:
         sender=Mixer.ZERO_ADDRESS,
     ):
         id = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         assert UtilsLib.exactly_one_zero(
             seized_assets, repaid_shares
         ), ErrorsLib.INCONSISTENT_INPUT
@@ -405,14 +409,14 @@ class MorphoBlue:
             )
             repaid_shares = SharesMathLib.to_shares_down(
                 repaid_assets,
-                self.market[id].total_borrow_assets,
-                self.market[id].total_borrow_shares,
+                self._market[id].total_borrow_assets,
+                self._market[id].total_borrow_shares,
             )
         else:
             repaid_shares = SharesMathLib.to_assets_up(
                 repaid_shares,
-                self.market[id].total_borrow_assets,
-                self.market[id].total_borrow_shares,
+                self._market[id].total_borrow_assets,
+                self._market[id].total_borrow_shares,
             )
             seized_assets = MathLib.mul_div_down(
                 MathLib.w_mul_down(repaid_assets, liquidation_incentive_factor),
@@ -421,43 +425,43 @@ class MorphoBlue:
             )
 
         # TODO: check that these value don't go negative
-        self.position[(id, borrower)].borrow_shares = (
-            self.position[(id, borrower)].borrow_shares - repaid_shares
+        self._position[(id, borrower)].borrow_shares = (
+            self._position[(id, borrower)].borrow_shares - repaid_shares
         )
-        self.market[id].total_borrow_shares = (
-            self.market[id].total_borrow_shares - repaid_shares
+        self._market[id].total_borrow_shares = (
+            self._market[id].total_borrow_shares - repaid_shares
         )
-        self.market[id].total_borrow_assets = UtilsLib.zero_floor_sub(
-            self.market[id].total_borrow_assets, repaid_assets
+        self._market[id].total_borrow_assets = UtilsLib.zero_floor_sub(
+            self._market[id].total_borrow_assets, repaid_assets
         )
 
-        self.position[(id, borrower)].collateral = (
-            self.position[(id, borrower)].collateral - seized_assets
+        self._position[(id, borrower)].collateral = (
+            self._position[(id, borrower)].collateral - seized_assets
         )
 
         bad_debt_shares = 0
 
-        if self.position[(id, borrower)].collateral == 0:
-            bad_debt_shares = self.position[(id, borrower)].borrow_shares
+        if self._position[(id, borrower)].collateral == 0:
+            bad_debt_shares = self._position[(id, borrower)].borrow_shares
             bad_debt = UtilsLib.min(
-                self.market[id].total_borrow_assets,
+                self._market[id].total_borrow_assets,
                 SharesMathLib.to_assets_up(
                     bad_debt_shares,
-                    self.market[id].total_borrow_assets,
-                    self.market[id].total_borrow_shares,
+                    self._market[id].total_borrow_assets,
+                    self._market[id].total_borrow_shares,
                 ),
             )
 
-            self.market[id].total_borrow_assets = (
-                self.market[id].total_borrow_assets - bad_debt
+            self._market[id].total_borrow_assets = (
+                self._market[id].total_borrow_assets - bad_debt
             )
-            self.market[id].total_supply_assets = (
-                self.market[id].total_supply_assets - bad_debt
+            self._market[id].total_supply_assets = (
+                self._market[id].total_supply_assets - bad_debt
             )
-            self.market[id].total_borrow_shares = (
-                self.market[id].total_borrow_shares - bad_debt_shares
+            self._market[id].total_borrow_shares = (
+                self._market[id].total_borrow_shares - bad_debt_shares
             )
-            self.position[(id, borrower)].borrow_shares = 0
+            self._position[(id, borrower)].borrow_shares = 0
 
         # TODO: add the transfer
         Mixer.contracts_and_eoas[market_params.collateral_token].safe_transfer(
@@ -497,54 +501,54 @@ class MorphoBlue:
         pass
 
     def _is_sender_authorized(self, on_behalf: Address, sender=Mixer.ZERO_ADDRESS):
-        return sender == on_behalf or self.is_authorized[(on_behalf, sender)]
+        return sender == on_behalf or self._is_authorized[(on_behalf, sender)]
 
     def accrue_interest(self, market_params: MarketParams, sender: Mixer.ZERO_ADDRESS):
         id = market_params.id()
-        assert self.market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
+        assert self._market[id].last_update != 0, ErrorsLib.MARKET_NOT_CREATED
         self._accrue_interest(market_params, id)
 
     def _accrue_interest(self, market_params: MarketParams, id: bytes):
         elapsed: int = (
-            Mixer.block_timestamp(self.metadata.chain) - self.market[id].last_update
+            Mixer.block_timestamp(self.metadata.chain) - self._market[id].last_update
         )
 
         if elapsed == 0:
             return
 
         borrow_rate = Mixer.contracts_and_eoas[market_params.irm].borrow_rate(
-            market_params, self.market[id], self.metadata.address
+            market_params, self._market[id], self.metadata.address
         )
         interest = MathLib.w_mul_down(
-            self.market[id].total_borrow_asssets,
+            self._market[id].total_borrow_assets,
             MathLib.w_taylor_compounded(borrow_rate, elapsed),
         )
 
-        self.market[id].total_borrow_assets = (
-            self.market[id].total_borrow_assets + interest
+        self._market[id].total_borrow_assets = (
+            self._market[id].total_borrow_assets + interest
         )
-        self.market[id].total_supply_assets = (
-            self.market[id].total_supply_assets + interest
+        self._market[id].total_supply_assets = (
+            self._market[id].total_supply_assets + interest
         )
 
         fee_shares = 0
 
-        if self.market[id].fee > 0:
-            fee_amount = MathLib.w_mul_down(interest, self.market[id].fee)
+        if self._market[id].fee > 0:
+            fee_amount = MathLib.w_mul_down(interest, self._market[id].fee)
             fee_shares = SharesMathLib.to_shares_down(
                 fee_amount,
-                self.market[id].total_supply_assets - fee_amount,
-                self.market[id].total_supply_shares,
+                self._market[id].total_supply_assets - fee_amount,
+                self._market[id].total_supply_shares,
             )
-            self.position[(id, self.fee_recipient)].supply_shares = (
-                self.position[(id, self.fee_recipient)].supply_shares + fee_shares
+            self._position[(id, self._fee_recipient)].supply_shares = (
+                self._position[(id, self._fee_recipient)].supply_shares + fee_shares
             )
-            self.market[id].total_supply_shares = (
-                self.market[id].total_supply_shares + fee_shares
+            self._market[id].total_supply_shares = (
+                self._market[id].total_supply_shares + fee_shares
             )
 
         # TODO: add emit event ?
-        self.market[id].last_update = Mixer.block_timestamp(self.metadata.chain)
+        self._market[id].last_update = Mixer.block_timestamp(self.metadata.chain)
 
     def _is_healthy(
         self,
@@ -552,32 +556,211 @@ class MorphoBlue:
         id: bytes,
         borrower: Address,
     ) -> bool:
-        if self.position[(id, borrower)].borrow_shares == 0:
+        if self._position[(id, borrower)].borrow_shares == 0:
             return True
         collateral_price = Mixer.contracts_and_eoas[market_params.oracle].price(
             self.metadata.address
         )
 
         borrowed = SharesMathLib.to_assets_up(
-            self.position[(id, borrower)].borrow_shares,
-            self.market[id].total_borrow_assets,
-            self.market[id].total_borrow_shares,
+            self._position[(id, borrower)].borrow_shares,
+            self._market[id].total_borrow_assets,
+            self._market[id].total_borrow_shares,
         )
         max_borrow = MathLib.w_mul_down(
             MathLib.mul_div_down(
-                self.position[(id, borrower)].collateral,
+                self._position[(id, borrower)].collateral,
                 collateral_price,
                 ConstantsLib.ORACLE_PRICE_SCALE,
             ),
             market_params.lltv,
         )
         return max_borrow >= borrowed
+    
+    # MORPHO Balances Lib
 
+    def expected_market_balances(
+        self,
+        market_params: MarketParams,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> Tuple[int, int, int, int]:
+        id = market_params.id()
+        market: Market = self._market[id]
+        elapsed = Mixer.block_timestamp(self.metadata.chain) - market.last_update
+        total_supply_assets, total_supply_shares, total_borrow_assets, total_borrow_shares = market.total_supply_assets, market.total_supply_shares, market.total_borrow_assets, market.total_borrow_shares
+
+        if elapsed > 0 and market.total_borrow_assets > 0:
+            borrow_rate = Mixer.contracts_and_eoas[market_params.irm].borrow_rate_view(
+                market_params, market
+            )
+            interest = MathLib.w_mul_down(
+                market.total_borrow_assets,
+                MathLib.w_taylor_compounded(borrow_rate, elapsed)
+            )
+            total_borrow_assets += interest
+            total_supply_assets += interest
+
+            if market.fee != 0:
+                fee_amount = MathLib.w_mul_down(interest, market.fee)
+                fee_shares = SharesMathLib.to_shares_down(
+                    fee_amount,
+                    total_supply_assets - fee_amount,
+                    total_supply_shares,
+                )
+                total_supply_shares += fee_shares
+            
+        return total_supply_assets, total_supply_shares, total_borrow_assets, total_borrow_shares
+
+    def expected_total_supply_assets(
+        self,
+        market_params: MarketParams,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        total_supply_assets, _, _, _ = self.expected_market_balances(market_params)
+        return total_supply_assets
+    
+    def expected_total_borrow_assets(self, market_params: MarketParams, sender = Mixer.ZERO_ADDRESS) -> int:
+        _, _, total_borrow_assets, _ = self.expected_market_balances(market_params)
+        return total_borrow_assets
+
+    def expected_total_supply_shares(
+        self,
+        market_params: MarketParams,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        _, total_supply_shares, _, _ = self.expected_market_balances(market_params)
+        return total_supply_shares
+
+    def expected_total_borrow_shares(self, market_params: MarketParams, sender = Mixer.ZERO_ADDRESS) -> int:
+        _, _, _, total_borrow_shares = self.expected_market_balances(market_params)
+        return total_borrow_shares
+    
+    def expected_supply_assets(self, market_params: MarketParams, user: Address, sender = Mixer.ZERO_ADDRESS) -> int:
+        id = market_params.id()
+        supply_shares = self.supply_shares(id, user)
+        total_supply_assets, total_supply_shares, _, _ = self.expected_market_balances(market_params)
+        return SharesMathLib.to_assets_down(supply_shares, total_supply_assets, total_supply_shares)
+    
+    def expected_borrow_assets(self, market_params: MarketParams, user: Address, sender = Mixer.ZERO_ADDRESS) -> int:
+        id = market_params.id()
+        borrow_shares = self.borrow_shares(id, user)
+        _, _, total_borrow_assets, total_borrow_shares = self.expected_market_balances(market_params)
+        return SharesMathLib.to_assets_up(borrow_shares, total_borrow_assets, total_borrow_shares)
+
+    
+    # Morpho Lib
+    def supply_shares(
+        self,
+        id: bytes,
+        user: Address,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._position[(id, user)].supply_shares
+
+    def borrow_shares(
+        self,
+        id: bytes,
+        user: Address,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._position[(id, user)].borrow_shares
+    
+    def collateral(
+        self,
+        id: bytes,
+        user: Address,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._position[(id, user)].collateral
+
+    def total_supply_assets(
+        self, 
+        id: bytes,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._market[id].total_supply_assets
+    
+    def total_supply_shares(
+        self, 
+        id: bytes,
+        sender = Mixer.ZERO_ADDRESS
+    ):
+        return self._market[id].total_supply_shares
+
+    def total_borrow_assets(
+        self, 
+        id: bytes,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._market[id].total_borrow_assets
+
+    def total_borrow_shares(
+        self, 
+        id: bytes,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._market[id].total_borrow_shares
+
+    def last_update(
+        self, 
+        id: bytes,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._market[id].last_update
+
+    def fee(
+        self, 
+        id: bytes,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._market[id].fee
+
+    def is_irm_enabled(
+        self,
+        lltv: int,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> bool:
+        return self._is_irm_enabled[lltv]
+    
+    def is_lltv_enabled(
+        self,
+        lltv: int,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> bool:
+        return self._is_lltv_enabled[lltv]
+
+    def is_authorized(
+        self,
+        authorizer: Address,
+        authorized: Address,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> bool:
+        return self._is_authorized[(authorizer, authorized)]
+    
+    def nonce(
+        self,
+        authorizer: Address,
+        sender = Mixer.ZERO_ADDRESS
+    ) -> int:
+        return self._nonce[authorizer]
+    
+    # Interface
+
+    def owner(self, sender = Mixer.ZERO_ADDRESS) -> Address: return self._owner
+
+    def fee_recipient(self, sender = Mixer.ZERO_ADDRESS) -> Address: return self._fee_recipient
+
+    def id_to_market_params(self, id: bytes, sender = Mixer.ZERO_ADDRESS) -> MarketParams: return self._id_to_market_params[id]
+    
+    def market(self, id: bytes, sender = Mixer.ZERO_ADDRESS) -> Market: return self._market[id]
+
+
+    '''
     def get_position(self, id: bytes, user: str) -> Position:
-        return self.position[(id, user)]
+        return self._position[(id, user)]
 
     def get_market(self, id: bytes) -> Market:
-        return self.market[id]
+        return self._market[id]
 
     def get_is_irm_enabled(self, irm: str) -> bool:
         return True  # TODO: implement later
@@ -592,10 +775,5 @@ class MorphoBlue:
         return 0  # TODO: implement later
 
     def get_id_to_market_params(self, id: bytes) -> MarketParams:
-        return self.id_to_market_params[id]
-
-
-@dataclass
-class AssetParams:
-    symbol: str = "DefaultAssetSTR"
-    decimals: int = "18"
+        return self._id_to_market_params[id]
+    '''

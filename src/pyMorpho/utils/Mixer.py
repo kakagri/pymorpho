@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 from enum import Enum
 from eth_abi import encode
-import sha3
+import hashlib
 
 
 class ChainID(Enum):
@@ -30,9 +30,9 @@ class Address(str):
             raise ValueError("Address must be either a string or a contract.")
 
     @staticmethod
-    def new(chain: ChainID = ChainID.ETHEREUM_MAINNET):
+    def new(chain: ChainID = ChainID.ETH_MAINNET):
         Address.ADDRESS_SALT = Address.ADDRESS_SALT + 1
-        k = sha3.keccak_256()
+        k = hashlib.sha3_256()
         k.update(
             encode(
                 ["bytes32", "int"], [bytes(str(chain), "utf-8"), Address.ADDRESS_SALT]
@@ -82,5 +82,5 @@ class Mixer:
     def block_timestamp(chain: ChainID = ChainID.ETH_MAINNET) -> int:
         return Mixer.block_timestamps[chain]
 
-    def set_block_timestamp(timestamp: int, chain: ChainID):
+    def set_block_timestamp(timestamp: int, chain: ChainID = ChainID.ETH_MAINNET):
         Mixer.block_timestamps[chain] = timestamp

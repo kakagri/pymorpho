@@ -9,6 +9,9 @@ class MarketParams:
     oracle: Address = Mixer.ZERO_ADDRESS
     irm: Address = Mixer.ZERO_ADDRESS
     lltv: int = 0
+    
+    def __hash__(self) -> int:
+        return hash(self.id)
 
     def id(self) -> str:
         return f"{self.loan_token}-{self.collateral_token}-{self.lltv}-{self.oracle}-{self.irm}"

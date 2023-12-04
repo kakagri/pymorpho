@@ -25,7 +25,10 @@ class ERC20(ABC):
 
         # Mixer utilities
         self.metadata = metadata
+    
+    def deploy(self) -> Address:
         self.metadata.address = Mixer.register(self)
+        return self.metadata.address
 
     def name(self) -> str:
         self._name
@@ -39,7 +42,7 @@ class ERC20(ABC):
     def total_supply(self) -> int:
         return self._total_supply
 
-    def balance_of(self, account: Address, sender: Mixer.ZERO_ADDRESS) -> int:
+    def balance_of(self, account: Address, sender = Mixer.ZERO_ADDRESS) -> int:
         return self._balances[account]
 
     def transfer(
@@ -49,7 +52,7 @@ class ERC20(ABC):
         return True
 
     def allowance(
-        self, owner: Address, spender: Address, sender: Mixer.ZERO_ADDRESS
+        self, owner: Address, spender: Address, sender = Mixer.ZERO_ADDRESS
     ) -> int:
         return self._allowances[(owner, spender)]
 
@@ -129,3 +132,24 @@ class ERC20(ABC):
         if current_allowance != 2**256 - 1:
             assert current_allowance >= amount, "ERC20: insufficient allowance"
             self._approve(owner, spender, current_allowance - amount)
+
+    def safe_transfer(self, to: Address, amount: int, sender = Mixer.ZERO_ADDRESS):
+        self.transfer(to, amount, sender)
+    
+    def safe_transfer_from(
+        self,
+        from_: Address,
+        to: Address,
+        amount: int,
+        sender = Mixer.ZERO_ADDRESS
+    ):
+        self.transfer_from(from_, to, amount, sender)
+    
+    def force_approve(
+        self,
+        spender: Address,
+        amount: int,
+        sender = Mixer.ZERO_ADDRESS
+    ):
+        self.approve(spender, amount, sender)
+        
