@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pymorpho.utils.Mixer import Mixer, Address, ChainID, Metadata, InstanceType
 
+
 @dataclass
 class MarketParams:
     loan_token: Address = Mixer.ZERO_ADDRESS
@@ -11,12 +12,14 @@ class MarketParams:
 
     def id(self) -> str:
         return f"{self.loan_token}-{self.collateral_token}-{self.lltv}-{self.oracle}-{self.irm}"
-    
+
+
 @dataclass
 class Position:
     supply_shares: int = 0
     borrow_shares: int = 0
     collateral: int = 0
+
 
 @dataclass
 class Market:
@@ -27,6 +30,7 @@ class Market:
     last_update: int = 0
     fee: int = 0
 
+
 @dataclass
 class Authorization:
     authorizer: Address = Mixer.ZERO_ADDRESS
@@ -34,6 +38,7 @@ class Authorization:
     is_authorized: bool = False
     nonce: int = 0
     deadline: int = 0
+
 
 @dataclass
 class Signature:

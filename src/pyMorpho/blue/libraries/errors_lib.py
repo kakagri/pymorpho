@@ -1,4 +1,3 @@
-
 class ErrorsLib:
     NOT_OWNER = "not owner"
     MAX_LLTV_EXCEEDED = "max LLTV exceeded"

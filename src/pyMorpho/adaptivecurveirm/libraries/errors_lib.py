@@ -1,4 +1,3 @@
-
 class ErrorsLib:
     INPUT_TOO_LARGE = "input too large"
     INPUT_TOO_SMALL = "input too small"

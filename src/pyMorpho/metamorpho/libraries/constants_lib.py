@@ -1,4 +1,3 @@
-
 class ConstantsLib:
     MAX_TIMELOCK = 2 * 7 * 24 * 60 * 60
     MIN_TIMELOCK = 24 * 60 * 60
