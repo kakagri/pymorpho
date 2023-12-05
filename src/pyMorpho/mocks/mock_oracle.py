@@ -8,13 +8,15 @@ class MockOracle:
         ),
         sender = Mixer.ZERO_ADDRESS
     ):
-        self.price: int = 0
+        self._price: int = 0
         self.metadata = metadata
     
     def deploy(self) -> Address:
         self.metadata.address = Mixer.register(self)
         return self.metadata.address
     
-    def get_price(self, sender = Mixer.ZERO_ADDRESS) -> int: return self.price
+    def price(self, sender = Mixer.ZERO_ADDRESS) -> int: return self._price
 
-    def set_price(self, _price: int, sender = Mixer.ZERO_ADDRESS): self.price = _price
+    def get_price(self, sender = Mixer.ZERO_ADDRESS) -> int: return self._price
+
+    def set_price(self, _price: int, sender = Mixer.ZERO_ADDRESS): self._price = _price
