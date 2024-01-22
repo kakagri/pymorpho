@@ -1,7 +1,8 @@
 from pymorpho.utils.Mixer import Mixer, Metadata, Address, ChainID, InstanceType
 from pymorpho.adaptivecurveirm.libraries.adaptivecurve.exp_lib import ExpLib
+from pymorpho.adaptivecurveirm.libraries.math_lib import MathLib 
 from pymorpho.adaptivecurveirm.libraries.utils_lib import UtilsLib
-from pymorpho.blue.libraries.math_lib import MathLib, WAD
+from pymorpho.blue.libraries.math_lib import MathLib as MorphoMathLib, WAD
 from pymorpho.blue.types import MarketParams, Market
 from pymorpho.adaptivecurveirm.libraries.errors_lib import ErrorsLib
 from pymorpho.adaptivecurveirm.libraries.adaptivecurve.constants_lib import ConstantsLib
@@ -13,10 +14,6 @@ class AdaptiveCurveIRM:
     def __init__(
         self,
         morpho: Address,
-        curve_steepness: int,
-        adjustment_speed: int,
-        target_utilization: int,
-        initial_rate_at_target: int,
         metadata: Metadata = Metadata(
             ChainID.ETH_MAINNET,
             Address.ZERO_ADDRESS,
@@ -26,36 +23,11 @@ class AdaptiveCurveIRM:
         sender=Mixer.ZERO_ADDRESS,
     ):
         self.MORPHO: Address = Mixer.ZERO_ADDRESS
-        self.CURVE_STEEPNESS: int = 0
-        self.ADJUSTMENT_SPEED: int = 0
-        self.TARGET_UTILIZATION: int = 0
-        self.INITIAL_RATE_AT_TARGET: int = 0
-
         self.rate_at_target: defaultdict[bytes, int] = defaultdict(int)
 
         assert morpho != Mixer.ZERO_ADDRESS, ErrorsLib.ZERO_ADDRESS
-        assert curve_steepness >= WAD, f"{ErrorsLib.INPUT_TOO_SMALL}, curve steepness = {curve_steepness}, WAD = {WAD}"
-        assert (
-            curve_steepness <= ConstantsLib.MAX_CURVE_STEEPNESS
-        ), ErrorsLib.INPUT_TOO_LARGE
-        assert adjustment_speed >= 0, ErrorsLib.INPUT_TOO_SMALL
-        assert (
-            adjustment_speed <= ConstantsLib.MAX_ADJUSTMENT_SPEED
-        ), ErrorsLib.INPUT_TOO_LARGE
-        assert target_utilization < WAD, ErrorsLib.INPUT_TOO_LARGE
-        assert target_utilization > 0, ErrorsLib.INPUT_TOO_SMALL
-        assert (
-            initial_rate_at_target >= ConstantsLib.MIN_RATE_AT_TARGET
-        ), ErrorsLib.INPUT_TOO_SMALL
-        assert (
-            initial_rate_at_target <= ConstantsLib.MAX_RATE_AT_TARGET
-        ), ErrorsLib.INPUT_TOO_LARGE
 
         self.MORPHO = morpho
-        self.CURVE_STEEPNESS = curve_steepness
-        self.ADJUSTMENT_SPEED = adjustment_speed
-        self.TARGET_UTILIZATION = target_utilization
-        self.INITIAL_RATE_AT_TARGET = initial_rate_at_target
 
         # utility stuff for simualtion
         self.metadata = metadata
@@ -85,26 +57,26 @@ class AdaptiveCurveIRM:
 
     def _borrow_rate(self, id: bytes, market: Market) -> Tuple[int, int]:
         utilization = (
-            MathLib.w_div_down(market.total_borrow_assets, market.total_supply_assets)
+            MorphoMathLib.w_div_down(market.total_borrow_assets, market.total_supply_assets)
             if market.total_supply_assets > 0
             else 0
         )
         err_norm_factor = (
-            WAD - self.TARGET_UTILIZATION
-            if utilization > self.TARGET_UTILIZATION
-            else self.TARGET_UTILIZATION
+            WAD - ConstantsLib.TARGET_UTILIZATION
+            if utilization > ConstantsLib.TARGET_UTILIZATION
+            else ConstantsLib.TARGET_UTILIZATION
         )
-        err = MathLib.w_div_down(utilization - self.TARGET_UTILIZATION, err_norm_factor)
+        err = MathLib.w_div_to_zero(utilization - ConstantsLib.TARGET_UTILIZATION, err_norm_factor)
         start_rate_at_target = self.rate_at_target[id]
 
         avg_rate_at_target = 0
         end_rate_at_target = 0
 
         if start_rate_at_target == 0:
-            avg_rate_at_target = self.INITIAL_RATE_AT_TARGET
-            end_rate_at_target = self.INITIAL_RATE_AT_TARGET
+            avg_rate_at_target = ConstantsLib.INITIAL_RATE_AT_TARGET
+            end_rate_at_target = ConstantsLib.INITIAL_RATE_AT_TARGET
         else:
-            speed = MathLib.w_mul_down(self.ADJUSTMENT_SPEED, err)
+            speed = MathLib.w_mul_to_zero(ConstantsLib.ADJUSTMENT_SPEED, err)
             elapsed = Mixer.block_timestamp(self.metadata.chain) - market.last_update
             linear_adaptation = speed * elapsed
 
@@ -126,15 +98,18 @@ class AdaptiveCurveIRM:
 
     def _curve(self, _rate_at_target, err) -> int:
         coeff = (
-            WAD - MathLib.w_div_down(WAD, self.CURVE_STEEPNESS)
+            WAD - MathLib.w_div_to_zero(WAD, ConstantsLib.CURVE_STEEPNESS)
             if err < 0
-            else self.CURVE_STEEPNESS - WAD
+            else ConstantsLib.CURVE_STEEPNESS - WAD
         )
-        return MathLib.w_mul_down(MathLib.w_mul_down(coeff, err) + WAD, _rate_at_target)
+        return MathLib.w_mul_to_zero(
+            MathLib.w_mul_to_zero(coeff, err) + WAD, 
+            _rate_at_target
+        )
 
     def _new_rate_at_target(self, start_rate_at_target, linear_adaptation) -> int:
         return UtilsLib.bound(
-            MathLib.w_mul_down(start_rate_at_target, ExpLib.w_exp(linear_adaptation)),
+            MathLib.w_mul_to_zero(start_rate_at_target, ExpLib.w_exp(linear_adaptation)),
             ConstantsLib.MIN_RATE_AT_TARGET,
             ConstantsLib.MAX_RATE_AT_TARGET,
         )

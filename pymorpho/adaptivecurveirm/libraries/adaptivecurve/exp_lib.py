@@ -21,4 +21,4 @@ class ExpLib:
         if q >= 0:
             return (2**q) * exp_r
         else:
-            return exp_r // (2**q)
+            return exp_r // (2**int(abs(q)))
